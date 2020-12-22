@@ -21,7 +21,7 @@ option(STATIC_ANALYSIS "Enable static code analysis using GCC" OFF)
 # Set compilation flags per-compiler
 if(MSVC)
     set(CMAKE_GENERATOR_PLATFORM x64)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP /Oi /Ot /GF /Qpar /std:c++17 /Zc:rvalueCast /W4 /WX /permissive-")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP /Oi /Ot /GF /Qpar /std:c++17 /Zc:rvalueCast /W4 /permissive-")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /Gy /MDd /JMC")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /Ob2 /GL /MD")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LTCG:incremental")
@@ -36,6 +36,9 @@ elseif(CMAKE_COMPILER_IS_GNUCC)
 endif()
 
 # Add source files
+find_package(Threads REQUIRED)
+find_package(OpenGL REQUIRED)
+add_subdirectory(external/glfw)
 add_subdirectory(src)
 
 # Optionally build unit tests
