@@ -4,13 +4,29 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <glad/glad.h>
+#include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
+#include <vector>
 
 ////////////////////////////////////////////////////////////
 /// Helper functions
 static void error_callback(int error, const char* description);
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
+namespace ImGui {
+template <typename F>
+bool InputTextLambda(
+    const char* label, char* buf, size_t buf_size, ImGuiInputTextFlags flags = 0, F callback = nullptr,
+    void* user_data = nullptr) {
+    auto freeCallback = [](ImGuiInputTextCallbackData* data) {
+        auto& f = *static_cast<F*>(data->UserData);
+        return f(data);
+    };
+    return InputText(label, buf, buf_size, flags, freeCallback, &callback);
+}
+} // namespace ImGui
 
 int main(void) {
     // Register error callback and then initialize glfw
@@ -21,7 +37,7 @@ int main(void) {
 
     // Create a window
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);    
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
     GLFWwindow* window = glfwCreateWindow(1280, 720, "Simple example", NULL, NULL);
     if (!window) {
         glfwTerminate();
@@ -36,109 +52,136 @@ int main(void) {
         exit(EXIT_FAILURE);
     }
     glfwSwapInterval(1);
-    
-    // IMGUI
-    const char* glsl_version = "#version 130";
-    // Setup Dear ImGui context
+
+    // Setup Dear ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    (void)io;
-    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
-    // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    // ImGui::StyleColorsClassic();
-
-    // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init(glsl_version);
-
-    // Load Fonts
-    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use
-    // ImGui::PushFont()/PopFont() to select them.
-    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-    // - If the file cannot be loaded, the function will return NULL. Please handle those errors in your application
-    // (e.g. use an assertion, or display an error and quit).
-    // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling
-    // ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
-    // - Read 'docs/FONTS.md' for more instructions and details.
-    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double
-    // backslash \\ !
-    // io.Fonts->AddFontDefault();
-    // io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
-    // io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
-    // io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
-    // io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
-    // ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL,
-    // io.Fonts->GetGlyphRangesJapanese()); IM_ASSERT(font != NULL);
+    ImGui_ImplOpenGL3_Init("#version 130");
 
     // Our state
     bool show_demo_window = true;
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
+    struct KeyAssignment {
+        int sourceKey = 0;
+        int destinationKey = 0;
+    };
+    std::vector<KeyAssignment> keys = { KeyAssignment{ 0, 0 } };
+    char inputSourceKey = { '0' }, inputDestinationKey = { '0' };
+    size_t activeIndex = 0;
+
     // Main loop
     while (!glfwWindowShouldClose(window)) {
+        // Start frame
         glfwPollEvents();
-
-        // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code
-        // to learn more about Dear ImGui!).
-        if (show_demo_window)
-            ImGui::ShowDemoWindow(&show_demo_window);
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+        ImGui::SetNextWindowPos({ 0, 0 });
+        ImGui::SetNextWindowSize({ 300, static_cast<float>(display_h) });
+        ImGui::Begin("Key Assignment Controls", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+        
+        if (ImGui::CollapsingHeader("Controls", nullptr, ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Indent();
+            ImGui::Spacing();
+            ImGui::Spacing();
+            if (ImGui::Button("Load script", { 115, 0 })) {
+            }
+            ImGui::SameLine(154);
+            if (ImGui::Button("Export script", { 115, 0 })) {
+            }            
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::Unindent();
+        }
 
-        // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
-        {
-            static float f = 0.0f;
-            static int counter = 0;
+         if (ImGui::CollapsingHeader("List", nullptr, ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Indent();
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Button, { 0.15, 0.66, 0.15, 1.0 });
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, { 0.33, 0.7, 0.33, 1.0 });
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, { 0.0, 0.5, 0.0, 1.0 });
+            if (ImGui::Button("Assign New Key", { 240, 25 })) {
+                // ImGui::OpenPopup("Key Chooser");
+                keys.emplace_back();
+                activeIndex = keys.size() - 1;
+            }
+            ImGui::PopStyleColor(3);
 
-            ImGui::Begin("Hello, world!"); // Create a window called "Hello, world!" and append into it.
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::Spacing();
 
-            ImGui::Text("This is some useful text.");          // Display some text (you can use a format strings too)
-            ImGui::Checkbox("Demo Window", &show_demo_window); // Edit bools storing our window open/close state
-            ImGui::Checkbox("Another Window", &show_another_window);
+             auto index = 0;
+             for (auto& element : keys) {
+                 ImGui::PushID(&element);
+                 ImGui::Spacing();
+                 ImGui::Spacing();
+                 ImGui::Text("On key: p");
+                 ImGui::SameLine(170);
+                 const bool pressedEdit = ImGui::Button("Edit", { 100, 0 });
+                 ImGui::Text("Do key: w");
+                 ImGui::SameLine(220);
+                 ImGui::PushStyleColor(ImGuiCol_Button, { 0.66, 0.15, 0.15, 1 });
+                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, { 0.7, 0.33, 0.33, 1 });
+                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, { 0.5, 0.0, 0.0, 1 });
+                 const bool pressedDelete = ImGui::Button("Delete", { 50, 0 });
+                 ImGui::PopStyleColor(3);
+                 ImGui::Spacing();
+                 ImGui::Spacing();
+                 ImGui::Separator();
+                 ImGui::PopID();
+                 if (pressedEdit) {
 
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-            ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+                 } else if (pressedDelete) {
+                     keys.erase(keys.begin() + index);
+                     break;
+                 }
+                 ++index;
+             }
+            ImGui::Unindent();
+        }
+        
+        ImGui::End();
 
-            if (ImGui::Button(
-                    "Button")) // Buttons return true when clicked (most widgets return true when edited/activated)
-                counter++;
+        /*if (ImGui::BeginPopupModal("Key Chooser", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+            ImGui::SetWindowSize({ 300, 150 });
+            ImGui::Text("Type the key you want to press:");
+            ImGui::InputText("Source", &inputSourceKey, ImGuiInputTextFlags_CallbackCharFilter, 1);
+            ImGui::Text("Type the key you want it to map to:");
+            ImGui::InputText("Target", &inputDestinationKey, ImGuiInputTextFlags_CallbackCharFilter, 1);
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::Spacing();
+            if (ImGui::Button("Close", { 100, 20 })) {
+                ImGui::CloseCurrentPopup();
+            }
             ImGui::SameLine();
-            ImGui::Text("counter = %d", counter);
-
-            ImGui::Text(
-                "Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate,
-                ImGui::GetIO().Framerate);
-            ImGui::End();
+            ImGui::Spacing();
+            ImGui::SameLine(240);
+            if (ImGui::Button("Accept", { 50, 20 })) {
+                keys.push_back({ static_cast<int>(inputSourceKey), static_cast<int>(inputDestinationKey) });
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
-
-        // 3. Show another simple window.
-        if (show_another_window) {
-            ImGui::Begin(
-                "Another Window", &show_another_window); // Pass a pointer to our bool variable (the window will have a
-                                                         // closing button that will clear the bool when clicked)
-            ImGui::Text("Hello from another window!");
-            if (ImGui::Button("Close Me"))
-                show_another_window = false;
-            ImGui::End();
-        }
+        ImGui::End();*/
 
         // Rendering
         ImGui::Render();
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
         glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
         glfwSwapBuffers(window);
     }
 
