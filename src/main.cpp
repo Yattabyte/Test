@@ -3,6 +3,9 @@
 #include "imgui_impl_opengl3.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <direct.h>
+#include <filesystem>
+#include <fstream>
 #include <glad/glad.h>
 #include <iostream>
 #include <stdio.h>
@@ -11,9 +14,23 @@
 #include <vector>
 
 ////////////////////////////////////////////////////////////
+/// Useful definitions
+struct KeyAssignment {
+    std::string sourceKey;
+    std::string destinationKey;
+};
+
+////////////////////////////////////////////////////////////
 /// Helper functions
 static void error_callback(int error, const char* description);
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+static void to_ahk(const std::string& filename, const std::vector<KeyAssignment>& keys);
+
+////////////////////////////////////////////////////////////
+/// Static variables
+static enum class ListenState { none, source, destination } listenState;
+static int sourceKeyCode = 0;
+static int destinationKeyCode = 0;
 
 namespace ImGui {
 template <typename F>
@@ -60,18 +77,13 @@ int main(void) {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
 
-    // Our state
-    bool show_demo_window = true;
-    bool show_another_window = false;
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-    struct KeyAssignment {
-        int sourceKey = 0;
-        int destinationKey = 0;
-    };
-    std::vector<KeyAssignment> keys = { KeyAssignment{ 0, 0 } };
-    char inputSourceKey = { '0' }, inputDestinationKey = { '0' };
-    size_t activeIndex = 0;
+    // Starting state
+    listenState = ListenState::none;
+    sourceKeyCode = 0;
+    destinationKeyCode = 0;
+    const ImVec4 clear_color{ 0.45f, 0.55f, 0.60f, 1.00f };
+    std::vector<KeyAssignment> keys = { KeyAssignment{} };
+    size_t keyEditIndex = 0;
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
@@ -86,7 +98,7 @@ int main(void) {
         ImGui::SetNextWindowPos({ 0, 0 });
         ImGui::SetNextWindowSize({ 300, static_cast<float>(display_h) });
         ImGui::Begin("Key Assignment Controls", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-        
+
         if (ImGui::CollapsingHeader("Controls", nullptr, ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Indent();
             ImGui::Spacing();
@@ -95,13 +107,14 @@ int main(void) {
             }
             ImGui::SameLine(154);
             if (ImGui::Button("Export script", { 115, 0 })) {
-            }            
+                to_ahk("test", keys);
+            }
             ImGui::Spacing();
             ImGui::Spacing();
             ImGui::Unindent();
         }
 
-         if (ImGui::CollapsingHeader("List", nullptr, ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("List", nullptr, ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Indent();
             ImGui::Spacing();
             ImGui::Spacing();
@@ -109,9 +122,8 @@ int main(void) {
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, { 0.33, 0.7, 0.33, 1.0 });
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, { 0.0, 0.5, 0.0, 1.0 });
             if (ImGui::Button("Assign New Key", { 240, 25 })) {
-                // ImGui::OpenPopup("Key Chooser");
                 keys.emplace_back();
-                activeIndex = keys.size() - 1;
+                keyEditIndex = keys.size() - 1;
             }
             ImGui::PopStyleColor(3);
 
@@ -121,44 +133,67 @@ int main(void) {
             ImGui::Spacing();
             ImGui::Spacing();
 
-             auto index = 0;
-             for (auto& element : keys) {
-                 ImGui::PushID(&element);
-                 ImGui::Spacing();
-                 ImGui::Spacing();
-                 ImGui::Text("On key: p");
-                 ImGui::SameLine(170);
-                 const bool pressedEdit = ImGui::Button("Edit", { 100, 0 });
-                 ImGui::Text("Do key: w");
-                 ImGui::SameLine(220);
-                 ImGui::PushStyleColor(ImGuiCol_Button, { 0.66, 0.15, 0.15, 1 });
-                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, { 0.7, 0.33, 0.33, 1 });
-                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, { 0.5, 0.0, 0.0, 1 });
-                 const bool pressedDelete = ImGui::Button("Delete", { 50, 0 });
-                 ImGui::PopStyleColor(3);
-                 ImGui::Spacing();
-                 ImGui::Spacing();
-                 ImGui::Separator();
-                 ImGui::PopID();
-                 if (pressedEdit) {
-
-                 } else if (pressedDelete) {
-                     keys.erase(keys.begin() + index);
-                     break;
-                 }
-                 ++index;
-             }
+            auto index = 0;
+            for (auto& element : keys) {
+                ImGui::PushID(&element);
+                ImGui::Spacing();
+                ImGui::Spacing();
+                ImGui::Text("On key: ");
+                ImGui::SameLine();
+                ImGui::Text(element.sourceKey.c_str());
+                ImGui::SameLine(170);
+                const bool pressedEdit = ImGui::Button("Edit", { 100, 0 });
+                ImGui::Text("Do key: ");
+                ImGui::SameLine();
+                ImGui::Text(element.destinationKey.c_str());
+                ImGui::SameLine(220);
+                ImGui::PushStyleColor(ImGuiCol_Button, { 0.66, 0.15, 0.15, 1 });
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, { 0.7, 0.33, 0.33, 1 });
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, { 0.5, 0.0, 0.0, 1 });
+                const bool pressedDelete = ImGui::Button("Delete", { 50, 0 });
+                ImGui::PopStyleColor(3);
+                ImGui::Spacing();
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::PopID();
+                if (pressedEdit) {
+                    keyEditIndex = index;
+                    ImGui::OpenPopup("Edit Key Mapping");
+                } else if (pressedDelete) {
+                    keys.erase(keys.begin() + index);
+                    break;
+                }
+                ++index;
+            }
             ImGui::Unindent();
         }
-        
-        ImGui::End();
 
-        /*if (ImGui::BeginPopupModal("Key Chooser", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+        if (ImGui::BeginPopupModal("Edit Key Mapping", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+            ImGui::PushID(keyEditIndex);
             ImGui::SetWindowSize({ 300, 150 });
+
             ImGui::Text("Type the key you want to press:");
-            ImGui::InputText("Source", &inputSourceKey, ImGuiInputTextFlags_CallbackCharFilter, 1);
-            ImGui::Text("Type the key you want it to map to:");
-            ImGui::InputText("Target", &inputDestinationKey, ImGuiInputTextFlags_CallbackCharFilter, 1);
+            static char bufferS[32] = { '\0' };
+            ImGui::PushID(&bufferS);
+            ImGui::InputTextLambda(
+                "Source", bufferS, 32, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CallbackAlways,
+                [&](ImGuiInputTextCallbackData* data) {
+                    listenState = ListenState::source;
+                    return 0;
+                });
+            ImGui::PopID();
+
+            ImGui::Text("Now type the key you want it to map to:");
+            static char bufferT[32] = { '\0' };
+            ImGui::PushID(&bufferT);
+            ImGui::InputTextLambda(
+                "Target", bufferT, 32, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CallbackAlways,
+                [&](ImGuiInputTextCallbackData* data) {
+                    listenState = ListenState::destination;
+                    return 0;
+                });
+            ImGui::PopID();
+
             ImGui::Spacing();
             ImGui::Spacing();
             ImGui::Spacing();
@@ -169,12 +204,16 @@ int main(void) {
             ImGui::Spacing();
             ImGui::SameLine(240);
             if (ImGui::Button("Accept", { 50, 20 })) {
-                keys.push_back({ static_cast<int>(inputSourceKey), static_cast<int>(inputDestinationKey) });
+                keys[keyEditIndex].sourceKey = std::string(&bufferS[0]);
+                keys[keyEditIndex].destinationKey = std::string(&bufferT[0]);
                 ImGui::CloseCurrentPopup();
             }
+
+            ImGui::PopID();
             ImGui::EndPopup();
         }
-        ImGui::End();*/
+
+        ImGui::End();
 
         // Rendering
         ImGui::Render();
@@ -195,8 +234,38 @@ int main(void) {
 }
 
 static void error_callback(int /*error*/, const char* description) { fprintf(stderr, "Error: %s\n", description); }
-static void key_callback(GLFWwindow* window, int key, int /*scancode*/, int action, int /*mods*/) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int /*mods*/) {
+    switch (listenState) {
+    case ListenState::source:
+        sourceKeyCode = scancode;
+        break;
+    case ListenState::destination:
+        destinationKeyCode = scancode;
+        break;
+    case ListenState::none:
+    default:
+        break;
     }
+    listenState = ListenState::none;
+}
+
+static std::string get_current_dir() {
+    // Technique to return the running directory of the application
+    char cCurrentPath[FILENAME_MAX];
+    if (_getcwd(cCurrentPath, sizeof(cCurrentPath)) != nullptr)
+        cCurrentPath[sizeof(cCurrentPath) - 1ULL] = '\0';
+    return std::string(cCurrentPath);
+}
+
+static void to_ahk(const std::string& filename, const std::vector<KeyAssignment>& keys) {
+    const std::string finalPath = get_current_dir() + "//" + filename + ".ahk";
+    std::ofstream file(finalPath);
+
+    for (const auto& element : keys) {
+        file << '`' + element.sourceKey + "::" + '`' + element.destinationKey + "\n";
+        file << '`' + element.destinationKey + "::" + '`' + element.sourceKey + "\n\r";
+    }
+    file << "return\n\r";
+    file.close();
 }
